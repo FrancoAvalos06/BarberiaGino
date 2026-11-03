@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control de Barbero</title>
+<style>
+:root{box-sizing:border-box;color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#000;--card:#141414;--tx:#f2f2f2;--mut:#9a9a9a;--ac:#d9d9d9;--ac2:#262626;--bd:#2c2c2c}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0 auto;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;padding:16px 16px 90px;max-width:560px}
+h1{font-size:20px;margin:4px 0 14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:14px}
+.big{font-size:34px;font-weight:700;color:var(--ac)}.mut{color:var(--mut);font-size:14px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.btns{display:grid;gap:10px}
+.svc{border:0;border-radius:14px;padding:18px;font-size:18px;font-weight:600;background:var(--ac);color:#111;display:flex;justify-content:space-between;cursor:pointer}
+.svc:disabled{opacity:.4}.svc small{font-weight:400;opacity:.8}
+button.sec{background:#d9d9d9;color:#111;border:0;border-radius:12px;padding:12px 14px;font-weight:600;font-size:15px;cursor:pointer}
+button.sec:disabled{opacity:.4}
+button.warn{background:#d9d9d9;color:#111;border:0;border-radius:12px;padding:14px;font-weight:600;font-size:16px;width:100%;cursor:pointer}
+.item{padding:10px 0;border-top:1px solid var(--bd)}
+.x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;border:0;background:none;color:var(--mut);padding:14px 0;font-size:15px;font-weight:600;cursor:pointer}
+nav button.on{color:var(--ac)}
+.bar{height:8px;border-radius:4px;background:var(--ac2);overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--ac)}
+.tag{font-size:12px;padding:2px 8px;border-radius:8px;background:var(--ac2);color:var(--ac)}.tag.o{background:transparent;border:1px solid var(--ac)}
+label{display:block;margin:10px 0 4px;font-size:14px;color:var(--mut)}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:16px}
+</style></head><body>
+<div id="app"></div>
+<nav id="nav"><button data-t="hoy">Hoy</button><button data-t="sem">Semana</button><button data-t="cfg">Ajustes</button></nav>
+<script>
+const CK='barbero_conn',N={corte:'Corte',barba:'Barba',cb:'Corte y barba'},D=['Lun','Mar','Mié','Jue','Vie','Sáb'];
+const DEF={name:'Barbero',pct:60,p:{corte:17000,barba:12000,cb:20000}};
+let S={cfg:DEF,sv:[],cd:{},cw:{}},C=null,tab='hoy',off=0,pend=null,ST='Conectando…',last='';
+try{C=JSON.parse(localStorage.getItem(CK))}catch(e){}
+const $=s=>document.querySelector(s),fmt=n=>'$'+Math.round(n).toLocaleString('es');
+const key=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const mon=d=>{const x=new Date(d);x.setHours(12,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x};
+const add=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const of=k=>S.sv.filter(s=>s.d===k),tot=a=>a.reduce((t,s)=>t+s.pr,0),sh=n=>n*S.cfg.pct/100;
+/* ---------- Sincronización (Firebase Realtime Database, API REST) ---------- */
+const base=()=>C.url.replace(/\/+$/,'')+'/barberia/'+encodeURIComponent(C.code);
+async function api(path,method,body){
+  try{const r=await fetch(base()+path+'.json',{method,body:body===undefined?undefined:JSON.stringify(body)});
+    if(!r.ok)throw new Error(r.status);ST='● Sincronizado';return r.json()}
+  catch(e){ST='⚠ Sin conexión';alert('No se pudo guardar. Revisa tu internet y vuelve a intentar.');pull();throw e}}
+async function pull(){
+  if(!C)return;
+  try{const r=await fetch(base()+'.json');if(!r.ok)throw 0;const d=(await r.json())||{};
+    const j=JSON.stringify(d);ST='● Sincronizado';
+    if(j!==last){last=j;
+      S.cfg=Object.assign({},DEF,d.cfg||{});S.cfg.p=Object.assign({},DEF.p,(d.cfg||{}).p||{});
+      S.sv=Object.entries(d.sv||{}).map(([id,v])=>Object.assign({id},v)).sort((a,b)=>a.ts-b.ts);
+      S.cd=d.cd||{};S.cw=d.cw||{};
+      if(tab!=='cfg'&&!pend)go()}
+    else{const e=$('#st');if(e)e.textContent=ST}}
+  catch(e){ST='⚠ Sin conexión';const el=$('#st');if(el)el.textContent=ST}}
+/* ---------- Pantallas ---------- */
+const stl=()=>`<div class="mut" id="st" style="text-align:right">${ST}</div>`;
+function hoy(){const now=new Date(),k=key(now),l=of(k),t=tot(l),c=S.cd[k],dom=now.getDay()===0;
+let h=stl()+`<h1>Hoy · ${now.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'})}</h1>`;
+h+=`<div class="card"><div class="mut">Total del día</div><div class="big">${fmt(t)}</div><div class="row"><span>${S.cfg.name} (${S.cfg.pct}%)</span><b>${fmt(sh(t))}</b></div><div class="row mut"><span>Para ti</span><span>${fmt(t-sh(t))}</span></div><div class="row mut"><span>Efectivo ${fmt(tot(l.filter(s=>s.m!=='tr')))}</span><span>Transf. ${fmt(tot(l.filter(s=>s.m==='tr')))}</span></div></div>`;
+if(dom)h+=`<div class="card">Hoy es domingo, día de descanso. Revisa el cierre en la pestaña Semana.</div>`;
+else{if(pend)h+=`<div class="card"><b>${N[pend]} · ${fmt(S.cfg.p[pend])}</b><p class="mut">¿Cómo pagó?</p><div class="row"><button class="svc" style="flex:1;justify-content:center" onclick="reg('${pend}','ef')">Efectivo</button><button class="svc" style="flex:1;justify-content:center" onclick="reg('${pend}','tr')">Transferencia</button></div><br><button class="sec" onclick="pend=null;go()">Cancelar</button></div>`;
+h+=`<div class="btns">`+Object.keys(N).map(x=>`<button class="svc" ${c||pend?'disabled':''} onclick="ask('${x}')"><span>${N[x]}</span><small>${fmt(S.cfg.p[x])}</small></button>`).join('')+`</div>`;
+h+=`<div class="card" style="margin-top:14px"><div class="row"><b>Servicios (${l.length})</b>${c?'<span class="tag">Día cerrado</span>':''}</div>`+(l.length?l.slice().reverse().map(s=>`<div class="item row"><span>${N[s.t]} <span class="mut">${s.h} · ${s.m==='tr'?'Transf.':'Efectivo'}</span></span><span>${fmt(s.pr)} ${c?'':`<button class="x" onclick="del('${s.id}')">×</button>`}</span></div>`).join(''):'<p class="mut">Aún no hay servicios.</p>')+`</div>`;
+h+=c?`<button class="sec" style="width:100%" onclick="reopen('${k}')">Reabrir día</button>`:`<button class="warn" onclick="close_('${k}')">Cerrar día</button>`}
+return h}
+function sem(){const m=add(mon(new Date()),-7*off),wk=key(m),days=D.map((n,i)=>{const k=key(add(m,i)),l=of(k);return{n,k,l,t:tot(l)}}),T=days.reduce((a,d)=>a+d.t,0),mx=Math.max(1,...days.map(d=>d.t)),w=S.cw[wk],worked=days.filter(d=>d.l.length).length;
+let h=stl()+`<div class="row"><button class="sec" onclick="off++;go()">‹</button><h1 style="margin:0">${off?'Semana del '+m.toLocaleDateString('es',{day:'numeric',month:'short'}):'Esta semana'}</h1><button class="sec" ${off?'':'disabled'} onclick="off--;go()">›</button></div><br>`;
+if(!off){const l=of(key(new Date())),t=tot(l);h+=`<div class="card"><div class="mut">Hoy va (${l.length} servicios)</div><div class="big">${fmt(sh(t))}</div><div class="mut">para ${S.cfg.name} · total del día ${fmt(t)}</div></div>`}
+h+=`<div class="card"><div class="mut">Sueldo de ${S.cfg.name} ${w?'(cerrado)':'hasta ahora'}</div><div class="big">${fmt(sh(T))}</div><div class="row mut"><span>Total generado ${fmt(T)}</span><span>Promedio/día ${fmt(worked?sh(T)/worked:0)}</span></div></div>`;
+h+=w?`<div class="card"><b>Cierre de semana</b><p>Pagar a ${S.cfg.name}: <b>${fmt(w.pay)}</b><br><span class="mut">Total semana ${fmt(w.total)} · Tu parte ${fmt(w.total-w.pay)}</span></p><button class="sec" onclick="reopenW('${wk}')">Reabrir semana</button></div>`:`<button class="warn" onclick="closeW('${wk}')">Cerrar semana</button><br><br>`;
+h+=`<div class="card"><div class="row"><b>Mi parte (${100-S.cfg.pct}%)</b><b class="big" style="font-size:26px">${fmt(T-sh(T))}</b></div><div class="mut">de ${fmt(T)} generados en la semana</div></div>`;
+h+=`<div class="card"><b>Conteo de la semana</b>`+days.map(d=>`<div class="item"><div class="row"><span><b>${d.n}</b> <span class="mut">${d.l.length} serv.</span> ${S.cd[d.k]?'<span class="tag">cerrado</span>':d.l.length?'<span class="tag o">abierto</span>':''}</span><span><b>${fmt(sh(d.t))}</b> <span class="mut">de ${fmt(d.t)}</span></span></div><div class="bar"><i style="width:${d.t/mx*100}%"></i></div></div>`).join('')+`</div>`;
+return h}
+function cfg(){const c=S.cfg;return `<h1>Ajustes</h1><div class="card"><label>Nombre del empleado</label><input id="n" value="${c.name}"><label>Porcentaje del empleado (%)</label><input id="pc" type="number" value="${c.pct}">`+Object.keys(N).map(x=>`<label>Precio: ${N[x]}</label><input id="p_${x}" type="number" value="${c.p[x]}">`).join('')+`<br><br><button class="warn" onclick="saveC()">Guardar</button><p class="mut">Los cambios de precio solo afectan servicios nuevos.</p></div><div class="card"><b>Conexión</b><p class="mut">Código: ${C.code}<br>${ST}</p><button class="sec" onclick="disc()">Cambiar conexión</button></div>`}
+function setup(){return `<h1>Conectar la barbería</h1><div class="card"><label>URL de tu Firebase Realtime Database</label><input id="u" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com"><label>Código secreto de la barbería (el mismo en ambos celulares)</label><input id="cd" placeholder="ej: barberia-juan-4821"><br><br><button class="warn" onclick="conn()">Conectar</button></div>`}
+function go(){const nav=$('#nav');nav.style.display=C?'flex':'none';
+ $('#app').innerHTML=!C?setup():tab==='hoy'?hoy():tab==='sem'?sem():cfg();
+ nav.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab))}
+/* ---------- Acciones ---------- */
+function conn(){const u=$('#u').value.trim(),c=$('#cd').value.trim();if(!/^https:\/\/.+/.test(u)||c.length<4){alert('Revisa la URL y usa un código de al menos 4 caracteres.');return}
+ C={url:u,code:c};localStorage.setItem(CK,JSON.stringify(C));last='';go();pull()}
+function disc(){if(confirm('¿Desconectar este celular?')){localStorage.removeItem(CK);C=null;go()}}
+function ask(t){pend=t;go()}
+async function reg(t,m){pend=null;const n=new Date(),id='s'+Date.now()+Math.floor(Math.random()*999),v={ts:Date.now(),d:key(n),t,m,pr:S.cfg.p[t],h:n.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})};
+ S.sv.push(Object.assign({id},v));go();await api('/sv/'+id,'PUT',v)}
+async function del(id){S.sv=S.sv.filter(s=>s.id!==id);go();await api('/sv/'+id,'DELETE')}
+async function close_(k){if(!confirm('¿Cerrar el día?'))return;S.cd[k]=1;go();await api('/cd/'+k,'PUT',1)}
+async function reopen(k){delete S.cd[k];go();await api('/cd/'+k,'DELETE')}
+async function closeW(wk){const m=new Date(wk+'T12:00:00');let T=0;const o={};for(let i=0;i<6;i++){const k=key(add(m,i));T+=tot(of(k));S.cd[k]=1;o[k]=1}
+ S.cw[wk]={total:T,pay:sh(T)};go();await api('/cd','PATCH',o);await api('/cw/'+wk,'PUT',S.cw[wk])}
+async function reopenW(wk){delete S.cw[wk];go();await api('/cw/'+wk,'DELETE')}
+async function saveC(){S.cfg={name:$('#n').value||'Barbero',pct:+$('#pc').value||60,p:{corte:+$('#p_corte').value||0,barba:+$('#p_barba').value||0,cb:+$('#p_cb').value||0}};tab='hoy';go();await api('/cfg','PUT',S.cfg)}
+$('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;off=0;go()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pull()});
+setInterval(pull,4000);go();pull();
+</script></body></html>
